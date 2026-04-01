@@ -1,0 +1,11 @@
+{
+  "name": "kol-scrapy-monitor",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Zero-dependency monitoring dashboard for KOL signal polling and Feishu notifications.",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  }
+}
