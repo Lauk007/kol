@@ -357,7 +357,7 @@ function buildStatusPayload() {
         ORDER BY id DESC
         LIMIT 1
       ) fr ON ss.run_id = fr.id
-      ORDER BY COALESCE(ss.updated_at, ss.published_at) DESC, ss.id DESC
+      ORDER BY ss.id ASC
       LIMIT 50
       `
     )
