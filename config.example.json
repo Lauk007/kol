@@ -1,6 +1,6 @@
 {
   "port": 3000,
-  "pollIntervalMinutes": 30,
+  "pollIntervalMinutes": 5,
   "requestTimeoutMs": 15000,
   "signalApiUrl": "https://kolpro.zhixing.icu/api/signals/list?type=analysis&limit=200&offset=0",
   "dashboardTitle": "KOL信号监控"
