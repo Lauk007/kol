@@ -864,7 +864,9 @@ async function pollOkxTraders({ source, targetUniqueName = "" }) {
   for (const trader of traders) {
     try {
       const payload = await fetchOkxPositionSummary(trader.unique_name);
-      const positions = extractOkxPositionItems(payload).map((item) => normalizeOkxPosition(item, trader.unique_name));
+      const positions = extractOkxPositionItems(payload).map((item) =>
+        normalizeOkxPosition(item, trader.unique_name, payload.__okxSource || "trader")
+      );
       const previousPositions = loadOkxPositionsForTrader(trader.id);
       const changeSet = buildOkxChangeSet(previousPositions, positions);
       persistOkxTraderSnapshot(trader, payload, positions);
@@ -931,6 +933,7 @@ async function fetchOkxPositionSummary(uniqueName) {
         Referer: `https://www.okx.com/zh-hans/copy-trading/account/${encodeURIComponent(uniqueName)}?tab=swap`,
         Origin: "https://www.okx.com"
       });
+      fallbackPayload.__okxSource = "community";
       const fallbackCount = extractOkxPositionItems(fallbackPayload).length;
       console.log(
         `[OKX] Success via fallback uniqueName=${uniqueName} positions=${fallbackCount} durationMs=${Date.now() - startedAt}`
@@ -938,6 +941,7 @@ async function fetchOkxPositionSummary(uniqueName) {
       return fallbackPayload;
     }
 
+    primaryPayload.__okxSource = "trader";
     const count = extractOkxPositionItems(primaryPayload).length;
     console.log(`[OKX] Success uniqueName=${uniqueName} positions=${count} durationMs=${Date.now() - startedAt}`);
     return primaryPayload;
@@ -964,6 +968,13 @@ function extractOkxPositionItems(payload) {
     return [];
   }
 
+  if (
+    payload.__okxSource === "community" &&
+    Array.isArray(payload.data)
+  ) {
+    return payload.data.flatMap((group) => (Array.isArray(group?.posData) ? group.posData : []));
+  }
+
   if (Array.isArray(payload.data)) {
     return payload.data;
   }
@@ -985,15 +996,17 @@ function extractOkxPositionItems(payload) {
   return [];
 }
 
-function normalizeOkxPosition(item, uniqueName) {
+function normalizeOkxPosition(item, uniqueName, sourceType = "trader") {
   const rawJson = stableJson(item);
   const instId = firstString(item, ["instId", "ccy", "instFamily", "symbol"]) || "UNKNOWN";
   const side = firstString(item, ["posSide", "side", "direction"]) || "";
   const openAvgPx = String(firstPrimitive(item, ["openAvgPx", "avgPx", "openPx"]) || "");
   const pos = String(firstPrimitive(item, ["pos", "subPos", "availSubPos", "size"]) || "");
-  const markPx = String(firstPrimitive(item, ["markPx", "last", "lastPx", "closePx"]) || "");
+  const markPx = String(
+    firstPrimitive(item, sourceType === "community" ? ["last", "markPx", "lastPx", "closePx"] : ["markPx", "last", "lastPx", "closePx"]) || ""
+  );
   const lever = String(firstPrimitive(item, ["lever", "leverage"]) || "");
-  const pnl = String(firstPrimitive(item, ["upl", "pnl", "uplRatio", "profit"]) || "");
+  const pnl = String(firstPrimitive(item, sourceType === "community" ? ["upl", "pnl", "uplRatio", "profit"] : ["upl", "pnl", "uplRatio", "profit"]) || "");
   const updatedAt =
     firstString(item, ["uTime", "updatedAt", "updateTime", "cTime", "createdAt"]) ||
     new Date().toISOString();
