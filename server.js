@@ -1133,9 +1133,6 @@ function buildFeishuPostContent(trader, changeSet) {
 
   const content = [
     [
-      { tag: "text", text: `带单员：${trader.remark || trader.display_name || trader.unique_name}\n` },
-      { tag: "text", text: `昵称：${trader.display_name || "-"}\n` },
-      { tag: "text", text: `ID：${trader.unique_name}\n` },
       { tag: "text", text: `本次变动：${summary.join(" | ") || "无"}` }
     ]
   ];
