@@ -952,18 +952,7 @@ function shouldUseOkxCommunityFallback(payload) {
     return false;
   }
 
-  const candidates = [
-    payload.msg,
-    payload.message,
-    payload.detailMsg,
-    payload.error_message,
-    payload?.data?.msg,
-    payload?.data?.message
-  ]
-    .filter((item) => typeof item === "string")
-    .join(" ");
-
-  return candidates.includes("您还未成为交易员，申请后可查看");
+  return String(payload.code || "").trim() === "59243";
 }
 
 function extractOkxPositionItems(payload) {
