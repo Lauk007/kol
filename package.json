@@ -2,10 +2,11 @@
   "name": "kol-scrapy-monitor",
   "version": "1.0.0",
   "private": true,
-  "description": "Zero-dependency monitoring dashboard for KOL signal polling and Feishu notifications.",
+  "description": "Zero-dependency monitoring dashboard for KOL signal polling and OKX trader tracking.",
   "type": "module",
   "scripts": {
-    "start": "node server.js",
-    "dev": "node --watch server.js"
+    "start": "node --watch server.js",
+    "dev": "node --watch server.js",
+    "start:prod": "node server.js"
   }
 }
