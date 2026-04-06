@@ -905,27 +905,65 @@ async function pollOkxTraders({ source, targetUniqueName = "" }) {
 }
 
 async function fetchOkxPositionSummary(uniqueName) {
-  const url =
+  const primaryUrl =
     `https://www.okx.com/priapi/v5/ecotrade/public/trader/position-summary` +
     `?instType=SWAP&uniqueName=${encodeURIComponent(uniqueName)}`;
+  const fallbackUrl =
+    `https://www.okx.com/priapi/v5/ecotrade/public/community/user/position-current` +
+    `?uniqueName=${encodeURIComponent(uniqueName)}`;
   const startedAt = Date.now();
 
-  console.log(`[OKX] Requesting ${url}`);
+  console.log(`[OKX] Requesting ${primaryUrl}`);
 
   try {
-    const payload = await requestJsonWithNativeHttp(url, config.requestTimeoutMs, {
+    const primaryPayload = await requestJsonWithNativeHttp(primaryUrl, config.requestTimeoutMs, {
       Accept: "application/json, text/plain, */*",
       "User-Agent": "Mozilla/5.0",
       Referer: `https://www.okx.com/zh-hans/copy-trading/account/${encodeURIComponent(uniqueName)}?tab=swap`,
       Origin: "https://www.okx.com"
     });
-    const count = extractOkxPositionItems(payload).length;
+
+    if (shouldUseOkxCommunityFallback(primaryPayload)) {
+      console.log(`[OKX] Switching to fallback endpoint uniqueName=${uniqueName} url=${fallbackUrl}`);
+      const fallbackPayload = await requestJsonWithNativeHttp(fallbackUrl, config.requestTimeoutMs, {
+        Accept: "application/json, text/plain, */*",
+        "User-Agent": "Mozilla/5.0",
+        Referer: `https://www.okx.com/zh-hans/copy-trading/account/${encodeURIComponent(uniqueName)}?tab=swap`,
+        Origin: "https://www.okx.com"
+      });
+      const fallbackCount = extractOkxPositionItems(fallbackPayload).length;
+      console.log(
+        `[OKX] Success via fallback uniqueName=${uniqueName} positions=${fallbackCount} durationMs=${Date.now() - startedAt}`
+      );
+      return fallbackPayload;
+    }
+
+    const count = extractOkxPositionItems(primaryPayload).length;
     console.log(`[OKX] Success uniqueName=${uniqueName} positions=${count} durationMs=${Date.now() - startedAt}`);
-    return payload;
+    return primaryPayload;
   } catch (error) {
     console.error(`[OKX] Failed uniqueName=${uniqueName} durationMs=${Date.now() - startedAt} error=${error.message}`);
     throw new Error(`OKX 抓取失败: ${error.message}`);
   }
+}
+
+function shouldUseOkxCommunityFallback(payload) {
+  if (!payload || typeof payload !== "object") {
+    return false;
+  }
+
+  const candidates = [
+    payload.msg,
+    payload.message,
+    payload.detailMsg,
+    payload.error_message,
+    payload?.data?.msg,
+    payload?.data?.message
+  ]
+    .filter((item) => typeof item === "string")
+    .join(" ");
+
+  return candidates.includes("您还未成为交易员，申请后可查看");
 }
 
 function extractOkxPositionItems(payload) {
