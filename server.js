@@ -1107,7 +1107,8 @@ function buildOkxChangeSet(previousPositions, nextPositions) {
   const nextMap = new Map(nextPositions.map((item) => [item.positionKey, item]));
   const opened = [];
   const closed = [];
-  const adjusted = [];
+  const increased = [];
+  const reduced = [];
 
   for (const position of nextPositions) {
     const previous = previousMap.get(position.positionKey);
@@ -1116,14 +1117,20 @@ function buildOkxChangeSet(previousPositions, nextPositions) {
       continue;
     }
 
-    if (
-      String(previous.margin || "") !== String(position.margin || "") ||
-      String(previous.lever || "") !== String(position.lever || "")
-    ) {
-      adjusted.push({
+    const previousMargin = Number(previous.margin || 0);
+    const nextMargin = Number(position.margin || 0);
+
+    if (Number.isFinite(previousMargin) && Number.isFinite(nextMargin) && previousMargin !== nextMargin) {
+      const change = {
         before: previous,
         after: position
-      });
+      };
+
+      if (nextMargin > previousMargin) {
+        increased.push(change);
+      } else {
+        reduced.push(change);
+      }
     }
   }
 
@@ -1136,8 +1143,9 @@ function buildOkxChangeSet(previousPositions, nextPositions) {
   return {
     opened,
     closed,
-    adjusted,
-    totalChanges: opened.length + closed.length + adjusted.length
+    increased,
+    reduced,
+    totalChanges: opened.length + closed.length + increased.length + reduced.length
   };
 }
 
@@ -1178,7 +1186,8 @@ function buildFeishuPostContent(trader, changeSet) {
   const summary = [];
   if (changeSet.opened.length) summary.push(`新开仓 ${changeSet.opened.length}`);
   if (changeSet.closed.length) summary.push(`已平仓 ${changeSet.closed.length}`);
-  if (changeSet.adjusted.length) summary.push(`保证金调整 ${changeSet.adjusted.length}`);
+  if (changeSet.increased.length) summary.push(`加仓 ${changeSet.increased.length}`);
+  if (changeSet.reduced.length) summary.push(`减仓 ${changeSet.reduced.length}`);
 
   const content = [
     [
@@ -1200,9 +1209,24 @@ function buildFeishuPostContent(trader, changeSet) {
     ]);
   }
 
-  for (const item of changeSet.adjusted) {
+  for (const item of changeSet.increased) {
     content.push([
-      { tag: "text", text: `【保证金调整】${formatPositionHeadline(item.after)}\n` },
+      { tag: "text", text: `【加仓】${formatPositionHeadline(item.after)}\n` },
+      {
+        tag: "text",
+        text:
+          `保证金：${formatDecimal(item.before.margin, 2)} -> ${formatDecimal(item.after.margin, 2)}\n` +
+          `杠杆：${displayValue(item.before.lever)} -> ${displayValue(item.after.lever)}\n` +
+          `开仓均价：${formatDecimal(item.after.open_avg_px, 4)}\n` +
+          `当前价格：${displayValue(item.after.markPx || item.after.mark_px)}\n` +
+          `浮动盈亏：${formatDecimal(item.after.pnl, 2)}`
+      }
+    ]);
+  }
+
+  for (const item of changeSet.reduced) {
+    content.push([
+      { tag: "text", text: `【减仓】${formatPositionHeadline(item.after)}\n` },
       {
         tag: "text",
         text:
