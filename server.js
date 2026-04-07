@@ -1212,30 +1212,14 @@ function buildFeishuPostContent(trader, changeSet) {
   for (const item of changeSet.increased) {
     content.push([
       { tag: "text", text: `【加仓】${formatPositionHeadline(item.after)}\n` },
-      {
-        tag: "text",
-        text:
-          `保证金：${formatDecimal(item.before.margin, 2)} -> ${formatDecimal(item.after.margin, 2)}\n` +
-          `杠杆：${displayValue(item.before.lever)} -> ${displayValue(item.after.lever)}\n` +
-          `开仓均价：${formatDecimal(item.after.open_avg_px, 4)}\n` +
-          `当前价格：${displayValue(item.after.markPx || item.after.mark_px)}\n` +
-          `浮动盈亏：${formatDecimal(item.after.pnl, 2)}`
-      }
+      { tag: "text", text: buildPositionDetail(item.after) }
     ]);
   }
 
   for (const item of changeSet.reduced) {
     content.push([
       { tag: "text", text: `【减仓】${formatPositionHeadline(item.after)}\n` },
-      {
-        tag: "text",
-        text:
-          `保证金：${formatDecimal(item.before.margin, 2)} -> ${formatDecimal(item.after.margin, 2)}\n` +
-          `杠杆：${displayValue(item.before.lever)} -> ${displayValue(item.after.lever)}\n` +
-          `开仓均价：${formatDecimal(item.after.open_avg_px, 4)}\n` +
-          `当前价格：${displayValue(item.after.markPx || item.after.mark_px)}\n` +
-          `浮动盈亏：${formatDecimal(item.after.pnl, 2)}`
-      }
+      { tag: "text", text: buildPositionDetail(item.after) }
     ]);
   }
 
