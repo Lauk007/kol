@@ -171,7 +171,7 @@ function loadOkxPositionsForTrader(traderId) {
         side,
         open_avg_px,
         mark_px,
-        pos,
+        margin,
         lever,
         pnl,
         updated_at,
@@ -518,7 +518,7 @@ function buildStatusPayload() {
         p.side,
         p.open_avg_px,
         p.mark_px,
-        p.pos,
+        p.margin,
         p.lever,
         p.pnl,
         p.updated_at,
@@ -800,6 +800,7 @@ function initDatabase(dbPath) {
       open_avg_px TEXT,
       mark_px TEXT,
       pos TEXT,
+      margin TEXT,
       lever TEXT,
       pnl TEXT,
       updated_at TEXT,
@@ -820,6 +821,10 @@ function initDatabase(dbPath) {
 
   try {
     database.exec("ALTER TABLE okx_traders ADD COLUMN remark TEXT NOT NULL DEFAULT ''");
+  } catch {}
+
+  try {
+    database.exec("ALTER TABLE okx_positions ADD COLUMN margin TEXT");
   } catch {}
 
   return database;
@@ -1002,6 +1007,7 @@ function normalizeOkxPosition(item, uniqueName, sourceType = "trader") {
   const side = firstString(item, ["posSide", "side", "direction"]) || "";
   const openAvgPx = String(firstPrimitive(item, ["openAvgPx", "avgPx", "openPx"]) || "");
   const pos = String(firstPrimitive(item, ["pos", "subPos", "availSubPos", "size"]) || "");
+  const margin = String(firstPrimitive(item, ["margin", "marginAmount", "imr", "marginBalance"]) || "");
   const markPx = String(
     firstPrimitive(item, sourceType === "community" ? ["last", "markPx", "lastPx", "closePx"] : ["markPx", "last", "lastPx", "closePx"]) || ""
   );
@@ -1018,6 +1024,7 @@ function normalizeOkxPosition(item, uniqueName, sourceType = "trader") {
     side,
     openAvgPx,
     pos,
+    margin,
     markPx,
     lever,
     pnl,
@@ -1062,11 +1069,12 @@ function persistOkxTraderSnapshot(trader, payload, positions) {
         open_avg_px,
         mark_px,
         pos,
+        margin,
         lever,
         pnl,
         updated_at,
         raw_json
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `
     );
 
@@ -1079,6 +1087,7 @@ function persistOkxTraderSnapshot(trader, payload, positions) {
         position.openAvgPx,
         position.markPx,
         position.pos,
+        position.margin,
         position.lever,
         position.pnl,
         position.updatedAt,
@@ -1108,7 +1117,7 @@ function buildOkxChangeSet(previousPositions, nextPositions) {
     }
 
     if (
-      String(previous.pos || "") !== String(position.pos || "") ||
+      String(previous.margin || "") !== String(position.margin || "") ||
       String(previous.lever || "") !== String(position.lever || "")
     ) {
       adjusted.push({
@@ -1169,7 +1178,7 @@ function buildFeishuPostContent(trader, changeSet) {
   const summary = [];
   if (changeSet.opened.length) summary.push(`新开仓 ${changeSet.opened.length}`);
   if (changeSet.closed.length) summary.push(`已平仓 ${changeSet.closed.length}`);
-  if (changeSet.adjusted.length) summary.push(`仓位调整 ${changeSet.adjusted.length}`);
+  if (changeSet.adjusted.length) summary.push(`保证金调整 ${changeSet.adjusted.length}`);
 
   const content = [
     [
@@ -1193,11 +1202,11 @@ function buildFeishuPostContent(trader, changeSet) {
 
   for (const item of changeSet.adjusted) {
     content.push([
-      { tag: "text", text: `【仓位调整】${formatPositionHeadline(item.after)}\n` },
+      { tag: "text", text: `【保证金调整】${formatPositionHeadline(item.after)}\n` },
       {
         tag: "text",
         text:
-          `仓位：${displayValue(item.before.pos)} -> ${displayValue(item.after.pos)}\n` +
+          `保证金：${formatDecimal(item.before.margin, 2)} -> ${formatDecimal(item.after.margin, 2)}\n` +
           `杠杆：${displayValue(item.before.lever)} -> ${displayValue(item.after.lever)}\n` +
           `开仓均价：${formatDecimal(item.after.open_avg_px, 4)}\n` +
           `当前价格：${displayValue(item.after.markPx || item.after.mark_px)}\n` +
@@ -1217,7 +1226,7 @@ function buildPositionDetail(position) {
   return (
     `开仓均价：${formatDecimal(position.openAvgPx || position.open_avg_px, 4)}\n` +
     `当前价格：${displayValue(position.markPx || position.mark_px)}\n` +
-    `仓位：${displayValue(position.pos)}\n` +
+    `保证金：${formatDecimal(position.margin, 2)}\n` +
     `杠杆：${displayValue(position.lever)}\n` +
     `盈亏：${formatDecimal(position.pnl, 2)}`
   );
@@ -1530,7 +1539,7 @@ function renderDashboard(currentConfig) {
           <div class="okx-metrics">
             <span class="metric">开仓均价 <strong>\${escapeHtml(formatPrice(position.open_avg_px))}</strong></span>
             <span class="metric">当前价格 <strong>\${escapeHtml(position.mark_px || "-")}</strong></span>
-            <span class="metric">仓位 <strong>\${escapeHtml(position.pos || "-")}</strong></span>
+            <span class="metric">保证金 <strong>\${escapeHtml(formatMetric(position.margin, 2))}</strong></span>
             <span class="metric">杠杆 <strong>\${escapeHtml(position.lever || "-")}</strong></span>
             <span class="metric">盈亏 <strong>\${escapeHtml(formatPnl(position.pnl))}</strong></span>
           </div>
@@ -1651,6 +1660,10 @@ function renderDashboard(currentConfig) {
 
     function formatPrice(value) {
       return formatNumber(value, 4);
+    }
+
+    function formatMetric(value, digits = 2) {
+      return formatNumber(value, digits);
     }
 
     function formatPnl(value) {
