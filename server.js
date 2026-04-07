@@ -1107,30 +1107,11 @@ function buildOkxChangeSet(previousPositions, nextPositions) {
   const nextMap = new Map(nextPositions.map((item) => [item.positionKey, item]));
   const opened = [];
   const closed = [];
-  const increased = [];
-  const reduced = [];
 
   for (const position of nextPositions) {
     const previous = previousMap.get(position.positionKey);
     if (!previous) {
       opened.push(position);
-      continue;
-    }
-
-    const previousMargin = Number(previous.margin || 0);
-    const nextMargin = Number(position.margin || 0);
-
-    if (Number.isFinite(previousMargin) && Number.isFinite(nextMargin) && previousMargin !== nextMargin) {
-      const change = {
-        before: previous,
-        after: position
-      };
-
-      if (nextMargin > previousMargin) {
-        increased.push(change);
-      } else {
-        reduced.push(change);
-      }
     }
   }
 
@@ -1143,9 +1124,7 @@ function buildOkxChangeSet(previousPositions, nextPositions) {
   return {
     opened,
     closed,
-    increased,
-    reduced,
-    totalChanges: opened.length + closed.length + increased.length + reduced.length
+    totalChanges: opened.length + closed.length
   };
 }
 
@@ -1186,8 +1165,6 @@ function buildFeishuPostContent(trader, changeSet) {
   const summary = [];
   if (changeSet.opened.length) summary.push(`新开仓 ${changeSet.opened.length}`);
   if (changeSet.closed.length) summary.push(`已平仓 ${changeSet.closed.length}`);
-  if (changeSet.increased.length) summary.push(`加仓 ${changeSet.increased.length}`);
-  if (changeSet.reduced.length) summary.push(`减仓 ${changeSet.reduced.length}`);
 
   const content = [
     [
@@ -1206,20 +1183,6 @@ function buildFeishuPostContent(trader, changeSet) {
     content.push([
       { tag: "text", text: `【已平仓】${formatPositionHeadline(position)}\n` },
       { tag: "text", text: buildPositionDetail(position) }
-    ]);
-  }
-
-  for (const item of changeSet.increased) {
-    content.push([
-      { tag: "text", text: `【加仓】${formatPositionHeadline(item.after)}\n` },
-      { tag: "text", text: buildPositionDetail(item.after) }
-    ]);
-  }
-
-  for (const item of changeSet.reduced) {
-    content.push([
-      { tag: "text", text: `【减仓】${formatPositionHeadline(item.after)}\n` },
-      { tag: "text", text: buildPositionDetail(item.after) }
     ]);
   }
 
