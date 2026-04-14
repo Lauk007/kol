@@ -2,7 +2,13 @@
   "port": 3000,
   "pollIntervalMinutes": 5,
   "requestTimeoutMs": 15000,
-  "signalApiUrl": "https://kolpro.zhixing.icu/api/signals/list?type=analysis&limit=200&offset=0",
+  "signalApiUrl": "https://kolpro.zhixing.icu/api/signals/filter",
+  "signalApiMethod": "POST",
+  "signalApiBody": {
+    "sort": "时间排序",
+    "limit": 200,
+    "offset": 0
+  },
   "dashboardTitle": "KOL Signal Monitor",
   "feishuWebhookUrl": "https://open.feishu.cn/open-apis/bot/v2/hook/29a7316b-e1fc-4e76-8cb8-e60a5e655554"
 }

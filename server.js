@@ -216,7 +216,17 @@ async function fetchAndPersist(source) {
   const startedTs = Date.now();
 
   try {
-    const payload = await fetchJson(config.signalApiUrl, config.requestTimeoutMs);
+    const payload = await fetchJson(
+      config.signalApiUrl,
+      config.requestTimeoutMs,
+      {
+        "accept-language": "zh-CN,zh;q=0.9,en;q=0.8",
+        "referer": "https://kolpro.zhixing.icu/",
+        "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+      },
+      config.signalApiMethod || "GET",
+      config.signalApiBody || null
+    );
     const items = extractSignalItems(payload)
       .map(normalizeItem)
       .filter((item) => !shouldFilterItem(item) && String(item.author || "").trim() !== "群友发言");
@@ -261,7 +271,7 @@ async function fetchAndPersist(source) {
 
     const insertSignal = db.prepare(
       `
-      INSERT INTO signals (
+      INSERT OR REPLACE INTO signals (
         signal_key,
         latest_hash,
         title,
@@ -559,7 +569,7 @@ function extractSignalItems(payload) {
     return [];
   }
 
-  const candidateKeys = ["data", "list", "items", "rows", "results", "messages"];
+  const candidateKeys = ["data", "list", "items", "rows", "results", "messages", "signals"];
 
   for (const key of candidateKeys) {
     if (Array.isArray(payload[key])) {
@@ -580,17 +590,17 @@ function extractSignalItems(payload) {
 function normalizeItem(item) {
   const rawJson = stableJson(item);
   const title =
-    firstString(item, ["title", "name", "summary", "analysis", "content", "message_content", "desc"]) ||
+    firstString(item, ["author_nickname", "title", "name", "summary", "analysis", "content", "message_content", "desc"]) ||
     "(untitled)";
   const author =
-    firstString(item, ["author", "authorName", "author_username", "author_nickname", "nickname", "username", "screenName"]) ||
+    firstString(item, ["author_nickname", "author", "authorName", "nickname", "author_username", "username", "screenName"]) ||
     "";
   const url = firstString(item, ["url", "link", "sourceUrl", "tweetUrl", "postUrl"]) || "";
   const publishedAt =
-    firstString(item, ["publishedAt", "createdAt", "created_at", "createTime", "timestamp", "time"]) ||
+    firstString(item, ["message_time", "publishedAt", "createdAt", "created_at", "createTime", "timestamp", "time"]) ||
     "";
   const updatedAt =
-    firstString(item, ["updatedAt", "updated_at", "updateTime", "modifiedAt", "modified_at"]) ||
+    firstString(item, ["message_time", "updatedAt", "updated_at", "updateTime", "modifiedAt", "modified_at"]) ||
     publishedAt;
   const identity =
     firstPrimitive(item, ["id", "signalId", "postId", "tweetId", "uuid", "slug"]) ||
@@ -617,19 +627,27 @@ function shouldFilterItem(item) {
   return author === "群友发言";
 }
 
-async function fetchJson(url, timeoutMs, extraHeaders = {}) {
+async function fetchJson(url, timeoutMs, extraHeaders = {}, method = "GET", body = null) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const response = await fetch(url, {
-      method: "GET",
+    const options = {
+      method: method,
       signal: controller.signal,
       headers: {
         Accept: "application/json",
         ...extraHeaders
       }
-    });
+    };
+
+    // Add body and Content-Type for POST requests
+    if (method === "POST" && body !== null) {
+      options.headers["Content-Type"] = "application/json";
+      options.body = JSON.stringify(body);
+    }
+
+    const response = await fetch(url, options);
 
     const text = await response.text();
 
@@ -1466,7 +1484,7 @@ function renderDashboard(currentConfig) {
 
     function renderSignalCard(signal) {
       const raw = safeParse(signal.payload_json);
-      const time = formatClock(signal.updated_at || signal.published_at);
+      const time = raw.message_time || signal.updated_at || signal.published_at || "--:--";
       const heading = buildHeading(signal, raw);
       const body = buildBody(signal, raw);
       const signalText = buildSignalText(raw);
@@ -1548,13 +1566,13 @@ function renderDashboard(currentConfig) {
     }
 
     function buildHeading(signal, raw) {
-      const author = signal.author || raw.author_nickname || raw.author_username || "群友发言";
+      const author = signal.author || raw.author_nickname || raw.author_nickname || "群友发言";
       const title = signal.title || raw.analysis || raw.message_content || "最新观点";
       return title.includes("【") && title.includes("】") ? author + "：最新观点" : author + "：最新信号";
     }
 
     function buildBody(signal, raw) {
-      const base = signal.title || raw.analysis || raw.message_content || "";
+      const base = raw.message_content || raw.analysis || signal.title || "";
       return base.replace(/\\s+/g, " ").trim();
     }
 
@@ -1666,6 +1684,8 @@ function loadConfig() {
     pollIntervalMinutes: Math.max(1, Number(parsed.pollIntervalMinutes || 60)),
     requestTimeoutMs: Math.max(1_000, Number(parsed.requestTimeoutMs || 15_000)),
     signalApiUrl: parsed.signalApiUrl,
+    signalApiMethod: parsed.signalApiMethod || "GET",
+    signalApiBody: parsed.signalApiBody || null,
     dashboardTitle: parsed.dashboardTitle || "KOL Signal Monitor",
     feishuWebhookUrl: String(parsed.feishuWebhookUrl || "").trim()
   };
