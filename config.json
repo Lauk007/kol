@@ -5,10 +5,14 @@
   "signalApiUrl": "https://kolpro.zhixing.icu/api/signals/filter",
   "signalApiMethod": "POST",
   "signalApiBody": {
-    "sort": "",
+    "sort": "时间排序",
     "limit": 200,
     "offset": 0
   },
+  "signalFeishuAuthors": [
+    "舒琴",
+    "三马哥合约"
+  ],
   "dashboardTitle": "KOL Signal Monitor",
   "feishuWebhookUrl": "https://open.feishu.cn/open-apis/bot/v2/hook/bea743c5-51d0-4907-943d-1e60d6438b6e"
 }

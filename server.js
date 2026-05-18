@@ -402,6 +402,8 @@ async function fetchAndPersist(source) {
       `
     ).run(newItems, changedItems, runId);
 
+    const signalPushSummary = await pushMatchedSignalNotifications(changes);
+
     const summary = {
       runId,
       source,
@@ -409,6 +411,8 @@ async function fetchAndPersist(source) {
       totalItems: items.length,
       newItems,
       changedItems,
+      signalPushCount: signalPushSummary.pushCount,
+      signalPushErrors: signalPushSummary.errors,
       unchangedItems: items.length - newItems - changedItems,
       digestChanged: previousSuccessfulRun ? previousSuccessfulRun.response_digest !== digest : true,
       finishedAt: new Date().toISOString()
@@ -450,6 +454,35 @@ async function fetchAndPersist(source) {
 
     return summary;
   }
+}
+
+async function pushMatchedSignalNotifications(changes) {
+  if (!config.feishuWebhookUrl || config.signalFeishuAuthors.length === 0 || changes.length === 0) {
+    return { pushCount: 0, errors: [] };
+  }
+
+  let pushCount = 0;
+  const errors = [];
+
+  for (const change of changes) {
+    if (!shouldPushSignalToFeishu(change)) {
+      continue;
+    }
+
+    try {
+      await pushSignalNotification(change);
+      pushCount += 1;
+    } catch (error) {
+      errors.push({
+        author: change.author,
+        title: change.title,
+        error: error.message
+      });
+      console.error(`[Feishu] Signal push failed author=${change.author} title=${change.title} error=${error.message}`);
+    }
+  }
+
+  return { pushCount, errors };
 }
 
 function buildStatusPayload() {
@@ -704,6 +737,77 @@ async function postJson(url, payload, timeoutMs) {
   } finally {
     clearTimeout(timeout);
   }
+}
+
+function shouldPushSignalToFeishu(change) {
+  const author = normalizeAuthorName(change.author);
+  if (!author) {
+    return false;
+  }
+
+  return config.signalFeishuAuthorsNormalized.includes(author);
+}
+
+async function pushSignalNotification(change) {
+  const raw = safeJsonParse(change.rawJson);
+  const body = {
+    msg_type: "post",
+    content: {
+      post: {
+        zh_cn: {
+          title: `KOL 信号推送 | ${change.author || "未知作者"}`,
+          content: buildSignalFeishuPostContent(change, raw)
+        }
+      }
+    }
+  };
+
+  await postJson(config.feishuWebhookUrl, body, config.requestTimeoutMs);
+}
+
+function buildSignalFeishuPostContent(change, raw) {
+  const message = firstNonEmptyString([
+    raw.message_content,
+    raw.analysis,
+    raw.content,
+    change.title
+  ]);
+  const signalText = firstNonEmptyString([
+    raw.signal,
+    raw.signal_text,
+    raw.direction
+  ]);
+  const symbol = firstNonEmptyString([
+    raw.symbol,
+    raw.instId,
+    raw.currency,
+    raw.coin
+  ]);
+  const publishedAt = firstNonEmptyString([
+    raw.message_time,
+    change.updatedAt,
+    change.publishedAt
+  ]);
+  const typeLabel = change.type === "changed" ? "信号更新" : "新信号";
+  const content = [
+    [
+      { tag: "text", text: `本次变动：${typeLabel}` }
+    ]
+  ];
+
+  content.push([
+    { tag: "text", text: `【${change.author || "未知作者"}】${change.title || "最新信号"}\n` },
+    {
+      tag: "text",
+      text:
+        `时间：${displayValue(publishedAt)}\n` +
+        `币种：${displayValue(symbol)}\n` +
+        `信号：${displayValue(signalText)}\n` +
+        `内容：${displayValue(message)}`
+    }
+  ]);
+
+  return content;
 }
 
 function requestJsonWithNativeHttp(url, timeoutMs, headers = {}) {
@@ -1678,6 +1782,7 @@ function loadConfig() {
   const configPath = fs.existsSync(CONFIG_PATH) ? CONFIG_PATH : DEFAULT_CONFIG_PATH;
   const raw = fs.readFileSync(configPath, "utf8");
   const parsed = JSON.parse(raw);
+  const signalFeishuAuthors = Array.isArray(parsed.signalFeishuAuthors) ? parsed.signalFeishuAuthors : [];
 
   return {
     port: Number(parsed.port || 3000),
@@ -1686,6 +1791,8 @@ function loadConfig() {
     signalApiUrl: parsed.signalApiUrl,
     signalApiMethod: parsed.signalApiMethod || "GET",
     signalApiBody: parsed.signalApiBody || null,
+    signalFeishuAuthors,
+    signalFeishuAuthorsNormalized: signalFeishuAuthors.map(normalizeAuthorName).filter(Boolean),
     dashboardTitle: parsed.dashboardTitle || "KOL Signal Monitor",
     feishuWebhookUrl: String(parsed.feishuWebhookUrl || "").trim()
   };
@@ -1711,6 +1818,32 @@ function sha256(input) {
 
 function stableJson(value) {
   return JSON.stringify(sortDeep(value));
+}
+
+function safeJsonParse(value) {
+  if (!value) {
+    return {};
+  }
+
+  try {
+    return JSON.parse(value);
+  } catch {
+    return {};
+  }
+}
+
+function normalizeAuthorName(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function firstNonEmptyString(values) {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+
+  return "";
 }
 
 function sortDeep(value) {

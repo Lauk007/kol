@@ -9,6 +9,10 @@
     "limit": 200,
     "offset": 0
   },
+  "signalFeishuAuthors": [
+    "舒琴",
+    "三马哥合约"
+  ],
   "dashboardTitle": "KOL Signal Monitor",
   "feishuWebhookUrl": "https://open.feishu.cn/open-apis/bot/v2/hook/29a7316b-e1fc-4e76-8cb8-e60a5e655554"
 }
