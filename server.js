@@ -461,16 +461,18 @@ async function pushMatchedSignalNotifications(changes) {
     return { pushCount: 0, errors: [] };
   }
 
+  const pendingChanges = dedupeSignalPushChanges(changes).filter((change) => !hasSignalPushRecord(change.pushKey));
   let pushCount = 0;
   const errors = [];
 
-  for (const change of changes) {
+  for (const change of pendingChanges) {
     if (!shouldPushSignalToFeishu(change)) {
       continue;
     }
 
     try {
       await pushSignalNotification(change);
+      recordSignalPush(change);
       pushCount += 1;
     } catch (error) {
       errors.push({
@@ -483,6 +485,44 @@ async function pushMatchedSignalNotifications(changes) {
   }
 
   return { pushCount, errors };
+}
+
+function dedupeSignalPushChanges(changes) {
+  const deduped = new Map();
+
+  for (const change of changes) {
+    const pushKey = buildSignalPushKey(change);
+    const current = {
+      ...change,
+      pushKey
+    };
+    const existing = deduped.get(pushKey);
+
+    if (!existing || compareSignalFreshness(current, existing) > 0) {
+      deduped.set(pushKey, current);
+    }
+  }
+
+  return Array.from(deduped.values()).sort((left, right) => compareSignalFreshness(right, left));
+}
+
+function buildSignalPushKey(change) {
+  const raw = safeJsonParse(change.rawJson);
+  const author = normalizeAuthorName(change.author);
+  const publishedAt = firstNonEmptyString([raw.message_time, change.updatedAt, change.publishedAt]);
+  const symbol = firstNonEmptyString([raw.symbol, raw.instId, raw.currency, raw.coin]).toLowerCase();
+  const signalText = firstNonEmptyString([raw.signal, raw.signal_text, raw.direction]).toLowerCase();
+  const message = firstNonEmptyString([raw.message_content, raw.analysis, raw.content, change.title]).toLowerCase();
+  return sha256([author, publishedAt, symbol, signalText, message].join("|"));
+}
+
+function compareSignalFreshness(left, right) {
+  const leftTime = Date.parse(left.updatedAt || left.publishedAt || "") || 0;
+  const rightTime = Date.parse(right.updatedAt || right.publishedAt || "") || 0;
+  if (leftTime !== rightTime) {
+    return leftTime - rightTime;
+  }
+  return String(left.hash || "").localeCompare(String(right.hash || ""));
 }
 
 function buildStatusPayload() {
@@ -748,6 +788,42 @@ function shouldPushSignalToFeishu(change) {
   return config.signalFeishuAuthorsNormalized.includes(author);
 }
 
+function hasSignalPushRecord(pushKey) {
+  const row = db
+    .prepare(
+      `
+      SELECT push_key
+      FROM signal_push_records
+      WHERE push_key = ?
+      `
+    )
+    .get(pushKey);
+
+  return Boolean(row);
+}
+
+function recordSignalPush(change) {
+  db.prepare(
+    `
+    INSERT OR IGNORE INTO signal_push_records (
+      push_key,
+      signal_key,
+      signal_hash,
+      author,
+      title,
+      pushed_at
+    ) VALUES (?, ?, ?, ?, ?, ?)
+    `
+  ).run(
+    change.pushKey,
+    change.key,
+    change.hash,
+    change.author,
+    change.title,
+    new Date().toISOString()
+  );
+}
+
 async function pushSignalNotification(change) {
   const raw = safeJsonParse(change.rawJson);
   const body = {
@@ -898,6 +974,15 @@ function initDatabase(dbPath) {
       source_url TEXT,
       payload_json TEXT NOT NULL,
       FOREIGN KEY(run_id) REFERENCES fetch_runs(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS signal_push_records (
+      push_key TEXT PRIMARY KEY,
+      signal_key TEXT,
+      signal_hash TEXT,
+      author TEXT,
+      title TEXT,
+      pushed_at TEXT NOT NULL
     );
 
     CREATE TABLE IF NOT EXISTS okx_traders (
